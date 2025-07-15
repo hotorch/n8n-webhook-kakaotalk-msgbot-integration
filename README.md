@@ -1,6 +1,8 @@
 # 🤖 카카오톡 메신저봇 n8n 웹훅 연동 시스템
 메신저봇R API2를 사용하여 카카오톡 메시지를 n8n 워크플로우와 연동하는 자동화 시스템입니다.
 
+![System Overview](asset/system-overview.png)
+
 ## 📋 목차
 
 - [개요](#개요)
@@ -86,12 +88,11 @@ sequenceDiagram
 ```javascript
 var CONFIG = {
     BOT_NAME: "n8n 웹훅 연동봇 v3.0",
-    // WEBHOOK_URL: "http://YOUR_SERVER:5678/webhook-test/n8n-kakaotalk-from-msg", // (test-url)
     WEBHOOK_URL: "http://YOUR_SERVER:5678/webhook/n8n-kakaotalk-from-msg", // (production-url)
-    TARGET_ROOMS: ["방이름1", "방이름2", "방이름3"],
-    CALL_KEYWORD: "?키워드",
-    BUTLER_LIST: ['관리자1', '관리자2'],
-    TIMEOUT: 45000,
+    TARGET_ROOMS: ["카톡방1","카톡방2","카톡방3"], // 연동할 카톡방 이름들
+    CALL_KEYWORD: "봇이 반응할 키워드 삽입", // 봇이 반응할 키워드
+    BUTLER_LIST: ['샘호트만 @ai.sam_hottman'], // 관리자 목록
+    TIMEOUT: 45000,  // 45초
     DEBUG_MODE: true
 };
 ```
@@ -99,7 +100,8 @@ var CONFIG = {
 ### n8n 설정
 
 1. n8n 서버 설치 및 실행
-2. 제공된 워크플로우 JSON을 n8n에 임포트
+2. 제공된 워크플로우 JSON을 n8n에 임포트:
+   - `n8n-workflow-for-msgbot.json` 파일을 n8n으로 임포트
 3. 웹훅 URL을 메신저봇 설정과 일치시키기
 
 ## 📖 사용법
@@ -143,35 +145,70 @@ TIMEOUT: 30000  // 30초
 
 ### 기본 워크플로우 구조
 
-1. **Webhook 노드**: 메신저봇에서 POST 요청 수신
-   - Method: POST
-   - Path: `n8n-kakaotalk-from-msg`
-   - Response Mode: Response Node
+n8n에서 다음 3개의 노드로 구성된 워크플로우를 생성합니다:
 
-2. **Edit Fields 노드**: 응답 메시지 생성
-   - `response_text` 필드에 응답 메시지 설정
-   - 메시지 변수 활용: `{{ $json.body.msg }}`
+#### 1. Webhook 노드 - 메시지 수신
+![Webhook Node Setup](asset/1-n8n-webhook-node.png)
 
-3. **Respond to Webhook 노드**: 메신저봇에 응답 전송
-   - Response Body: `{{ $json.response_text }}`
-   - Response Code: 200
+- **HTTP Method**: POST
+- **Path**: `n8n-kakaotalk-from-msg`
+- **Response Mode**: Response Node로 설정
 
-### 고급 워크플로우 예시
+#### 2. Edit Fields 노드 - 응답 메시지 생성
+![Edit Fields Node Setup](asset/2-edit-fields-setup.png)
+
+- **Mode**: Manual Mapping
+- **Fields to Set**: 
+  - Name: `response_text`
+  - Value: `안녕하세요! 메시지 {{ $json.body.msg }} 를 잘 받았습니다 :)`
+
+이 노드에서 다양한 응답 로직을 구현할 수 있습니다:
 
 ```javascript
-// Edit Fields 노드에서 조건부 응답
+// 조건부 응답 예시
 {
   "response_text": "{{ $json.body.msg.includes('날씨') ? '오늘 날씨는 맑습니다!' : '안녕하세요! 메시지를 받았습니다.' }}"
 }
 ```
 
-### 외부 API 연동
+#### 3. Respond to Webhook 노드 - 응답 전송
+![Respond to Webhook Node Setup](asset/3-respond-to-webhook.png)
 
+- **Respond With**: Text
+- **Response Body**: `{{ $json.response_text }}`
+- **Response Code**: 200
+
+### 워크플로우 임포트 방법
+
+1. n8n 대시보드에서 "New Workflow" 클릭
+2. 우상단 메뉴에서 "Import from JSON" 선택
+3. `n8n-workflow-for-msgbot.json` 파일 내용을 붙여넣기
+4. "Import" 클릭하여 워크플로우 로드
+5. 각 노드의 설정을 환경에 맞게 조정
+6. "Activate" 버튼을 클릭하여 워크플로우 활성화
+
+### 고급 워크플로우 예시
+
+#### 외부 API 연동
 워크플로우에 HTTP Request 노드를 추가하여 외부 API와 연동 가능:
 
-1. **HTTP Request 노드** 추가
+1. **HTTP Request 노드** 추가 (Edit Fields와 Respond to Webhook 사이)
 2. **외부 API 호출** (날씨, 번역, AI 등)
 3. **응답 데이터 가공** 후 메신저봇에 전송
+
+#### 조건부 처리
+메시지 내용에 따라 다른 처리 로직 적용:
+
+```javascript
+// Switch 노드를 사용한 조건부 분기
+{
+  "rules": {
+    "0": "{{ $json.body.msg.includes('날씨') }}",
+    "1": "{{ $json.body.msg.includes('번역') }}",
+    "2": "{{ $json.body.msg.includes('검색') }}"
+  }
+}
+```
 
 ## 🔍 트러블슈팅
 
@@ -182,6 +219,7 @@ TIMEOUT: 30000  // 30초
 1. **네트워크 연결 확인**
    - n8n 서버가 실행 중인지 확인
    - 웹훅 URL이 정확한지 확인
+   - 방화벽 설정 확인
 
 2. **로그 확인**
    ```
@@ -198,12 +236,14 @@ TIMEOUT: 30000  // 30초
 1. **방 이름 확인**: `TARGET_ROOMS`에 정확한 방 이름 등록
 2. **키워드 확인**: 메시지가 `CALL_KEYWORD`로 시작하는지 확인
 3. **권한 확인**: 메신저봇 접근성 권한 활성화
+4. **관리자 목록 확인**: `BUTLER_LIST`에 올바른 사용자명 등록
 
 #### n8n에서 빈 데이터를 받을 때
 
-1. **메신저봇 코드 버전 확인**: Ver 1.0 사용 권장
+1. **메신저봇 코드 버전 확인**: Ver 3.0 사용 권장
 2. **웹훅 URL 일치 확인**: 메신저봇과 n8n 설정 비교
 3. **Content-Type 헤더 확인**: `application/json` 설정
+4. **워크플로우 활성화 확인**: n8n에서 워크플로우가 활성화되어 있는지 확인
 
 ### 로그 분석
 
@@ -211,7 +251,7 @@ TIMEOUT: 30000  // 30초
 ```
 [INFO] 메시지 수신 - 방: 테스트방, 발신자: 사용자, 내용: ?복자 안녕
 [DEBUG] 필터링 체크 - 방: 테스트방 (유효: true), 키워드: true
-[INFO] 웹훅 호출 시작: http://server:5678/webhook/...
+[INFO] 웹훅 호출 시작: http://server:5678/webhook/n8n-kakaotalk-from-msg
 [INFO] 웹훅 응답 수신 - 상태코드: 200
 [INFO] n8n 응답 성공: 안녕하세요! 메시지를 받았습니다.
 ```
@@ -221,6 +261,18 @@ TIMEOUT: 30000  // 30초
 - `timeout`: 응답 시간 초과
 - `connect`: 네트워크 연결 실패
 - `파싱 실패`: 응답 데이터 처리 오류
+
+### URL 설정 주의사항
+
+메신저봇 코드에서 테스트용과 프로덕션용 URL을 구분해서 사용:
+
+```javascript
+// 테스트용 (워크플로우 비활성화 상태에서 테스트)
+WEBHOOK_URL: "http://server:5678/webhook-test/n8n-kakaotalk-from-msg"
+
+// 프로덕션용 (워크플로우 활성화 후)
+WEBHOOK_URL: "http://server:5678/webhook/n8n-kakaotalk-from-msg"
+```
 
 ## 🚀 추후 고급 활용
 
@@ -254,6 +306,22 @@ if (messagePattern.test(msg.content)) {
     // 명령어 처리
 }
 ```
+
+## 📁 프로젝트 파일 구조
+
+```
+n8n-webhook-kakaotalk-msgbot-integration/
+├── asset/                              # 문서용 이미지 파일들
+│   ├── 1-n8n-webhook-node.png         # Webhook 노드 설정 스크린샷
+│   ├── 2-edit-fields-setup.png        # Edit Fields 노드 설정 스크린샷
+│   ├── 3-respond-to-webhook.png       # Respond to Webhook 노드 설정 스크린샷
+│   └── system-overview.png            # 전체 시스템 개요 다이어그램
+├── n8n-webhook-msgbot-src.js          # 메신저봇용 JavaScript 코드
+├── n8n-workflow-for-msgbot.json       # n8n 워크플로우 JSON 파일
+├── README.md                           # 프로젝트 문서 (현재 파일)
+└── LICENSE                             # 라이선스 파일
+```
+
 ---
 
 ⭐ 이 프로젝트가 도움이 되었다면 스타를 눌러주세요! 
