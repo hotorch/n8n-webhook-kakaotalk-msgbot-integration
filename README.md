@@ -12,6 +12,7 @@
 - [사용법](#사용법)
 - [n8n 워크플로우 설정](#n8n-워크플로우-설정)
 - [트러블슈팅](#트러블슈팅)
+- [버전 히스토리](#버전-히스토리)
 - [기여](#기여)
 
 ## 📖 개요
@@ -24,6 +25,7 @@
 - 🛡️ **안정적인 에러 핸들링**: 다단계 안전장치와 상세한 에러 처리
 - 📝 **상세한 로깅**: 디버깅과 모니터링을 위한 종합적인 로그 시스템
 - 🎯 **선택적 메시지 처리**: 특정 방과 키워드만 처리
+- 👥 **관리자 권한 관리**: 강화된 사용자 권한 시스템
 - 🔧 **유연한 설정**: 쉬운 설정 변경 및 커스터마이징
 
 ## ⚡ 기능
@@ -33,7 +35,8 @@
 - 특정 카카오톡 방에서 키워드로 시작하는 메시지 감지
 - JSON 형태로 메시지 데이터를 n8n 웹훅으로 전송
 - n8n에서 받은 응답을 카카오톡으로 자동 회신
-- 관리자 권한 및 방 필터링 기능
+- 강화된 관리자 권한 및 방 필터링 기능
+- 향상된 응답 처리 로직 (v3.1)
 
 ### n8n 연동 기능
 
@@ -41,6 +44,7 @@
 - JSON 및 텍스트 응답 처리
 - 타임아웃 및 에러 상황 대응
 - 다양한 응답 형식 지원
+- 안정적인 웹훅 통신 (.execute() 방식)
 
 ## 🏗️ 시스템 구조
 
@@ -56,20 +60,21 @@ sequenceDiagram
     participant Phone as 📱 스마트폰 (메신저봇 앱)
     participant N8N as 🧠 n8n (Local)
 
-    User->>+Phone: 카톡방에 메시지 전송 ("?복자 안녕")
-    Note right of Phone: 메신저봇 앱이 메시지를 감지
+    User->>+Phone: 카톡방에 메시지 전송 ("?봇 안녕")
+    Note right of Phone: 메신저봇 앱이 메시지를 감지<br/>관리자 권한 확인
     Phone->>+N8N: Webhook으로 메시지 정보 전달 (room, sender, msg)
     Note right of N8N: n8n 워크플로우 실행<br/>명령어에 따라 외부 API 호출 또는 로직 수행
     N8N-->>-Phone: Webhook 응답으로 최종 답장 전달
-    Phone-->>-User: 카톡방에 답장 메시지 입력
+    Phone-->>-User: 카톡방에 답장 메시지 입력 (포맷팅 적용)
 ```
 
 ### 데이터 흐름
 
 1. **메시지 수신**: 카카오톡에서 특정 키워드로 시작하는 메시지 감지
-2. **데이터 전송**: 메시지 정보를 JSON으로 n8n 웹훅에 POST 요청
-3. **워크플로우 처리**: n8n에서 메시지 처리 및 응답 생성
-4. **응답 회신**: 처리된 응답을 카카오톡으로 자동 전송
+2. **권한 확인**: 관리자 목록에 등록된 사용자인지 확인
+3. **데이터 전송**: 메시지 정보를 JSON으로 n8n 웹훅에 POST 요청
+4. **워크플로우 처리**: n8n에서 메시지 처리 및 응답 생성
+5. **응답 회신**: 처리된 응답을 카카오톡으로 자동 전송 (포맷팅 적용)
 
 ## 🛠️ 설치 및 설정
 
@@ -87,11 +92,12 @@ sequenceDiagram
 
 ```javascript
 var CONFIG = {
-    BOT_NAME: "n8n 웹훅 연동봇 v3.0",
-    WEBHOOK_URL: "http://YOUR_SERVER:5678/webhook/n8n-kakaotalk-from-msg", // (production-url)
-    TARGET_ROOMS: ["카톡방1","카톡방2","카톡방3"], // 연동할 카톡방 이름들
-    CALL_KEYWORD: "봇이 반응할 키워드 삽입", // 봇이 반응할 키워드
-    BUTLER_LIST: ['샘호트만 @ai.sam_hottman'], // 관리자 목록
+    BOT_NAME: "n8n 웹훅 연동봇 v3.1",
+    VERSION: "3.1.0",
+    WEBHOOK_URL: "http://your-n8n-server:5678/webhook/n8n-kakaotalk-from-msg", // 실제 서버 주소로 변경
+    TARGET_ROOMS: ["테스트방1","테스트방2","테스트방3"], // 연동할 카톡방 이름들
+    CALL_KEYWORD: "?봇", // 봇이 반응할 키워드
+    BUTLER_LIST: ['관리자1', '관리자2'], // 봇을 사용할 수 있는 관리자 목록
     TIMEOUT: 45000,  // 45초
     DEBUG_MODE: true
 };
@@ -110,13 +116,13 @@ var CONFIG = {
 
 1. 설정된 카카오톡 방에서 키워드로 메시지 전송:
    ```
-   ?복자 안녕하세요!
+   ?봇 안녕하세요!
    ```
 
 2. 메신저봇이 자동으로 n8n에 다음 데이터 전송:
    ```json
    {
-     "msg": "?복자 안녕하세요!",
+     "msg": "?봇 안녕하세요!",
      "room": "방이름",
      "sender": "보낸사람"
    }
@@ -134,6 +140,11 @@ TARGET_ROOMS: ["새로운방", "다른방", "테스트방"]
 #### 키워드 변경
 ```javascript
 CALL_KEYWORD: "!키워드"
+```
+
+#### 관리자 목록 설정
+```javascript
+BUTLER_LIST: ['사용자1', '사용자2', '관리자닉네임']
 ```
 
 #### 타임아웃 조정
@@ -236,24 +247,25 @@ n8n에서 다음 3개의 노드로 구성된 워크플로우를 생성합니다:
 1. **방 이름 확인**: `TARGET_ROOMS`에 정확한 방 이름 등록
 2. **키워드 확인**: 메시지가 `CALL_KEYWORD`로 시작하는지 확인
 3. **권한 확인**: 메신저봇 접근성 권한 활성화
-4. **관리자 목록 확인**: `BUTLER_LIST`에 올바른 사용자명 등록
+4. **관리자 목록 확인**: `BUTLER_LIST`에 올바른 사용자명 등록 (v3.1 강화)
 
 #### n8n에서 빈 데이터를 받을 때
 
-1. **메신저봇 코드 버전 확인**: Ver 3.0 사용 권장
+1. **메신저봇 코드 버전 확인**: Ver 3.1 사용 권장
 2. **웹훅 URL 일치 확인**: 메신저봇과 n8n 설정 비교
 3. **Content-Type 헤더 확인**: `application/json` 설정
 4. **워크플로우 활성화 확인**: n8n에서 워크플로우가 활성화되어 있는지 확인
 
 ### 로그 분석
 
-#### 정상 동작 로그 예시
+#### 정상 동작 로그 예시 (v3.1)
 ```
-[INFO] 메시지 수신 - 방: 테스트방, 발신자: 사용자, 내용: ?복자 안녕
-[DEBUG] 필터링 체크 - 방: 테스트방 (유효: true), 키워드: true
+[INFO] 메시지 수신 - 방: 테스트방, 발신자: 사용자, 내용: ?봇 안녕
+[DEBUG] 필터링 체크 - 방: 테스트방 (유효: true), 키워드: true, 발신자: 사용자 (집사: true)
 [INFO] 웹훅 호출 시작: http://server:5678/webhook/n8n-kakaotalk-from-msg
 [INFO] 웹훅 응답 수신 - 상태코드: 200
-[INFO] n8n 응답 성공: 안녕하세요! 메시지를 받았습니다.
+[DEBUG] 응답 원본 (순수 텍스트): 안녕하세요! 메시지를 받았습니다.
+[INFO] 최종 전송 메시지 미리보기: 안녕하세요! 메시지를 받았습니다...
 ```
 
 #### 에러 로그 분석
@@ -261,6 +273,7 @@ n8n에서 다음 3개의 노드로 구성된 워크플로우를 생성합니다:
 - `timeout`: 응답 시간 초과
 - `connect`: 네트워크 연결 실패
 - `파싱 실패`: 응답 데이터 처리 오류
+- `집사: false`: 권한이 없는 사용자의 요청
 
 ### URL 설정 주의사항
 
@@ -287,12 +300,26 @@ var webhookUrls = {
 };
 ```
 
-### 관리자 전용 기능
+### 관리자 전용 기능 (v3.1 강화)
 
 ```javascript
-// BUTLER_LIST에 등록된 사용자만 특정 기능 사용
-if (MessageFilter.isButler(msg.author.name)) {
-    // 관리자 전용 로직
+// 강화된 관리자 확인 함수 사용
+function isButler(userName) {
+    if (!userName) return false;
+    
+    // 정확한 매칭 확인
+    for (var i = 0; i < CONFIG.BUTLER_LIST.length; i++) {
+        if (userName === CONFIG.BUTLER_LIST[i]) {
+            return true;
+        }
+    }
+    
+    // 특정 문자열 포함 여부 확인
+    if (userName.indexOf('관리자') !== -1) {
+        return true;
+    }
+    
+    return false;
 }
 ```
 
@@ -307,6 +334,26 @@ if (messagePattern.test(msg.content)) {
 }
 ```
 
+## 📝 버전 히스토리
+
+### v3.1 (2025-01-15)
+- 🔧 **웹훅 클라이언트 개선**: `.post()` → `.execute()` 방식으로 변경하여 안정성 향상
+- 👥 **관리자 권한 시스템 강화**: `isButler()` 함수 추가로 더 정교한 사용자 관리
+- 📝 **응답 처리 로직 최적화**: JSON 파싱 및 포맷팅 로직 개선
+- 🎨 **카카오톡 포맷팅 적용**: 보이지 않는 문자(`\u200b`) 추가로 메시지 표시 개선
+- 🛡️ **에러 핸들링 강화**: `Utils.isEmpty()` 함수에서 null/undefined 처리 개선
+
+### v3.0 (2025-01-15)
+- 🚀 **jsoup 웹훅 전송 방식 도입**: 데이터 전송 안정성 확보
+- 📊 **향상된 응답 처리 로직**: 다단계 응답 파싱 시스템
+- 🔍 **JSON 파싱 및 에러 핸들링 개선**: 다양한 응답 형식 지원
+- 📝 **상세한 로깅 시스템**: 디버깅 및 모니터링 강화
+
+### v1.0 (2025-07-15)
+- 🎉 **초기 릴리즈**: 기본 웹훅 연동 시스템 구현
+- 🔄 **실시간 메시지 처리**: 카카오톡-n8n 기본 연동
+- 🎯 **선택적 메시지 필터링**: 방/키워드 기반 처리
+
 ## 📁 프로젝트 파일 구조
 
 ```
@@ -316,7 +363,7 @@ n8n-webhook-kakaotalk-msgbot-integration/
 │   ├── 2-edit-fields-setup.png        # Edit Fields 노드 설정 스크린샷
 │   ├── 3-respond-to-webhook.png       # Respond to Webhook 노드 설정 스크린샷
 │   └── system-overview.png            # 전체 시스템 개요 다이어그램
-├── n8n-webhook-msgbot-src.js          # 메신저봇용 JavaScript 코드
+├── n8n-webhook-msgbot-src.js          # 메신저봇용 JavaScript 코드 (v3.1)
 ├── n8n-workflow-for-msgbot.json       # n8n 워크플로우 JSON 파일
 ├── README.md                           # 프로젝트 문서 (현재 파일)
 └── LICENSE                             # 라이선스 파일

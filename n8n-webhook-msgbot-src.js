@@ -1,22 +1,27 @@
 /**
- * 카카오톡 메신저봇 - n8n 웹훅 연동 시스템 (Ver 1.0)
+ * 카카오톡 메신저봇 - n8n 웹훅 연동 시스템 (Ver 3.0)
  * 메신저봇R API2 / ES5 문법
  * 작성자: 샘호트만 렛츠고
- * 작성일: 2025-07-15
- * 수정일: 2025-07-16
-
+ * 작성일: 2025-01-15
+ * 수정일: 2025-01-15
+ * 
+ * [Ver 3.0 변경사항]
+ * - jsoup 웹훅 전송 방식 유지 (데이터 전송 안정성)
+ * - 향상된 응답 처리 로직 적용
+ * - JSON 파싱 및 에러 핸들링 개선
+ */
 
 // ===== 1. Bot 인스턴스 (최우선!) =====
 var bot = BotManager.getCurrentBot();
 
 // ===== 2. 설정 =====
 var CONFIG = {
-    BOT_NAME: "n8n 웹훅 연동봇 v3.0",
-    VERSION: "3.0.0",
-    WEBHOOK_URL: "http://**.***.**.***:5678/webhook-test/n8n-kakaotalk-from-msg", // 웹훅 경로를 뜻함 (테스트할 때 에는 webhook-test, 워크플로우 활성화 하고 나서는 webhook 주소로 메신저봇 경로 또한 변경할 것
-    TARGET_ROOMS: ["카톡방1","카톡방2","카톡방3",...], // 어느 카톡방에만 워킹할 것인지 정의하기. 메신저봇과 연동한 카카오톡 계정에서의 카톡방 이름과 같아야함
-    CALL_KEYWORD: "봇이 반응할 키워드 삽입", // 봇이 반응할 키워드 삽입
-    BUTLER_LIST: ['샘호트만 @ai.sam_hottman'], // 카톡 이름만 반응할 수 있게 세팅. 다른 사람은 못 쓰고 본인만 쓸 수 있다는 뜻
+    BOT_NAME: "n8n 웹훅 연동봇 v3.1",
+    VERSION: "3.1.0",
+    WEBHOOK_URL: "http://your-n8n-server:5678/webhook/n8n-kakaotalk-from-msg", // 실제 사용시 본인의 n8n 서버 주소로 변경
+    TARGET_ROOMS: ["테스트방1","테스트방2","테스트방3"], // 실제 사용할 카카오톡 방 이름으로 변경
+    CALL_KEYWORD: "?봇", // 봇이 반응할 키워드
+    BUTLER_LIST: ['관리자1', '관리자2'], // 봇을 사용할 수 있는 사용자 목록
     TIMEOUT: 45000,  // 45초로 조정
     DEBUG_MODE: true
 };
@@ -49,10 +54,34 @@ var Log = {
     }
 };
 
+// 집사 확인 함수 (default-bokja.js와 동일한 로직)
+function isButler(userName) {
+    if (!userName) return false;
+    
+    // 정확한 매칭 확인
+    for (var i = 0; i < CONFIG.BUTLER_LIST.length; i++) {
+        if (userName === CONFIG.BUTLER_LIST[i]) {
+            return true;
+        }
+    }
+    
+    // 특정 문자열 포함 여부 확인 (필요시 수정)
+    if (userName.indexOf('관리자') !== -1) {
+        return true;
+    }
+    
+    return false;
+}
+
+
+
 var Utils = {
-    // 문자열이 비어있는지 확인
+    // 문자열이 비어있는지 확인 (최종 수정)
     isEmpty: function(str) {
-        return !str || str.trim().length === 0;
+        // str이 null이거나 undefined인 경우를 먼저 처리
+        if (str === null || str === undefined) return true;
+        // 이제 str은 확실한 JavaScript String이므로 .trim() 사용 가능
+        return String(str).trim().length === 0;
     },
     
     // 배열에 요소가 포함되어 있는지 확인
@@ -96,15 +125,17 @@ var MessageFilter = {
         
         var validRoom = this.isValidRoom(msg.room);
         var hasKeyword = this.hasKeyword(msg.content);
+        var isButlerUser = isButler(msg.author.name); // 집사 확인 추가
         
         Log.debug("필터링 체크 - 방: " + msg.room + 
-                 " (유효: " + validRoom + "), 키워드: " + hasKeyword);
+                 " (유효: " + validRoom + "), 키워드: " + hasKeyword + 
+                 ", 발신자: " + msg.author.name + " (집사: " + isButlerUser + ")");
         
-        return validRoom && hasKeyword;
+        return validRoom && hasKeyword && isButlerUser; // 집사 조건 추가
     }
 };
 
-// ===== 5. 웹훅 클라이언트 (jsoup 방식 - 안정성 강화) =====
+// ===== 5. 웹훅 클라이언트 (최종 수정: .execute() 사용) =====
 var WebhookClient = {
     send: function(data, callback) {
         Log.info("웹훅 호출 시작: " + CONFIG.WEBHOOK_URL);
@@ -113,37 +144,28 @@ var WebhookClient = {
         Log.debug("전송 데이터: " + jsonString);
         
         try {
-            // jsoup을 사용한 HTTP POST 요청 (데이터 전송 안정성 확보)
+            // ★★★★★ 핵심 수정 ★★★★★
+            // .post()는 HTML로 파싱하므로, 순수 텍스트 응답을 받기 위해 .execute()를 사용합니다.
             var response = org.jsoup.Jsoup.connect(CONFIG.WEBHOOK_URL)
                 .header("Content-Type", "application/json")
                 .requestBody(jsonString)
                 .ignoreContentType(true)
                 .ignoreHttpErrors(true)
                 .timeout(CONFIG.TIMEOUT)
-                .post();
+                .method(org.jsoup.Connection.Method.POST) // .execute()를 위해 메소드를 명시
+                .execute(); // .post() 대신 .execute() 호출
+            // ★★★★★★★★★★★★★★★★★
             
-            Log.debug("응답 받음, 상태코드 확인 시도");
+            var statusCode = response.statusCode();
+            Log.info("웹훅 응답 수신 - 상태코드: " + statusCode);
             
-            var statusCode;
-            try {
-                statusCode = response.statusCode();
-                Log.info("웹훅 응답 수신 - 상태코드: " + statusCode);
-            } catch (statusError) {
-                Log.error("상태코드 확인 오류: " + statusError.message);
-                // 상태코드를 확인할 수 없어도 응답이 있으면 처리 시도
-                Log.info("상태코드 불명이지만 응답 처리 시도");
+            if (statusCode >= 200 && statusCode < 300) {
+                Log.debug("응답 성공, 콜백 호출");
                 callback(null, response);
-                return;
-            }
-            
-            // 상태코드가 확인 가능한 경우에만 체크
-            if (statusCode && (statusCode < 200 || statusCode >= 300)) {
+            } else {
                 var error = new Error("HTTP Error: " + statusCode);
                 error.statusCode = statusCode;
                 callback(error, response);
-            } else {
-                Log.debug("응답 성공, 콜백 호출");
-                callback(null, response);
             }
             
         } catch (error) {
@@ -226,122 +248,47 @@ var MessageProcessor = {
                 return;
             }
             
-            // 5. 성공 응답 처리 (메신저봇 호환성 개선)
             try {
-                Log.debug("응답 객체 타입 확인: " + typeof response);
-                
-                // 안전한 메서드 확인
-                try {
-                    if (response && typeof response === 'object') {
-                        Log.debug("응답 객체가 유효함");
-                    }
-                } catch (debugError) {
-                    Log.debug("응답 객체 디버깅 중 오류: " + debugError.message);
-                }
-                
-                var rawResponse;
-                
-                // jsoup Document에서 텍스트 추출 시도 (단계별 안전한 방법)
-                Log.debug("텍스트 추출 시작");
-                
-                if (!response) {
-                    Log.error("응답 객체가 null");
-                    msg.reply("🔧 응답 객체가 없습니다");
-                    return;
-                }
-                
-                try {
-                    // 방법 1: text() 메서드 (가장 일반적)
-                    if (typeof response.text === 'function') {
-                        rawResponse = response.text();
-                        Log.debug("text() 메서드 성공, 길이: " + rawResponse.length);
-                    } else {
-                        throw new Error("text() 메서드 없음");
-                    }
-                } catch (textError) {
-                    Log.debug("text() 메서드 실패: " + textError.message);
-                    
-                    try {
-                        // 방법 2: body().text() 메서드
-                        if (response.body && typeof response.body === 'function') {
-                            var bodyElement = response.body();
-                            if (bodyElement && typeof bodyElement.text === 'function') {
-                                rawResponse = bodyElement.text();
-                                Log.debug("body().text() 메서드 성공, 길이: " + rawResponse.length);
-                            } else {
-                                throw new Error("body().text() 메서드 없음");
-                            }
-                        } else {
-                            throw new Error("body() 메서드 없음");
-                        }
-                    } catch (bodyError) {
-                        Log.debug("body().text() 메서드 실패: " + bodyError.message);
-                        
-                        try {
-                            // 방법 3: toString() 메서드 (최후 수단)
-                            rawResponse = String(response);
-                            Log.debug("toString() 변환 성공, 길이: " + rawResponse.length);
-                        } catch (toStringError) {
-                            Log.error("모든 텍스트 추출 방법 실패");
-                            msg.reply("🔧 응답 텍스트 추출 실패: " + toStringError.message);
-                            return;
-                        }
-                    }
-                }
-                
-                Log.debug("응답 원본: " + rawResponse);
-                
-                // 빈 응답 체크
+                // 1. .execute()로 받은 응답의 body는 순수 텍스트입니다.
+                //    Java String을 JavaScript String으로 안전하게 변환합니다.
+                var rawResponse = String(response.body());
+
+                Log.debug("응답 원본 (순수 텍스트): " + rawResponse);
+
                 if (Utils.isEmpty(rawResponse)) {
                     Log.error("n8n에서 빈 응답 수신");
                     msg.reply("🤔 n8n에서 빈 응답을 받았습니다");
                     return;
                 }
-                
+
                 var answer = rawResponse;
-                
-                // n8n이 JSON 형태로 응답하는 경우 처리
-                if (rawResponse.charAt(0) === '{' || rawResponse.charAt(0) === '[') {
+
+                // 2. n8n 응답이 JSON 형태인지 확인하고 response_text 추출
+                //    이제 charAt, trim, replace 모두 정상 동작합니다.
+                if (answer.trim().charAt(0) === '[') {
                     try {
-                        var jsonResponse = JSON.parse(rawResponse);
-                        Log.debug("JSON 파싱 성공: " + Utils.safeStringify(jsonResponse));
-                        
-                        // 배열 형태: [{"response_text": "..."}]
-                        if (jsonResponse instanceof Array && 
-                            jsonResponse.length > 0 && 
-                            jsonResponse[0] && 
-                            jsonResponse[0].response_text) {
+                        var jsonResponse = JSON.parse(answer);
+                        Log.debug("JSON 배열 파싱 성공");
+
+                        if (jsonResponse.length > 0 && jsonResponse[0] && jsonResponse[0].response_text) {
                             answer = jsonResponse[0].response_text;
-                            Log.debug("JSON 배열 파싱 성공, response_text 추출: " + answer);
-                        }
-                        // 객체 형태: {"response_text": "..."}
-                        else if (jsonResponse.response_text) {
-                            answer = jsonResponse.response_text;
-                            Log.debug("JSON 객체 파싱 성공, response_text 추출: " + answer);
-                        }
-                        // 다른 JSON 형태는 원본 텍스트 사용
-                        else {
-                            Log.debug("JSON 파싱되었지만 response_text 없음, 원본 텍스트 사용");
+                            Log.debug("response_text 추출 성공");
                         }
                     } catch (jsonError) {
                         Log.error("JSON 파싱 실패, 원본 텍스트 사용: " + jsonError.message);
-                        // 파싱 실패 시 원본 텍스트 그대로 사용
                     }
                 }
+
+                // 3. 카카오톡 포맷팅 적용 (보이지 않는 문자 + trim)
+                //    가장 단순하고 올바른 형태로 되돌립니다.
+                var invisibleChar = "\u200b";
+                answer = invisibleChar + String(answer).trim();
+
+                Log.info("최종 전송 메시지 미리보기: " + answer.substring(0, 100) + "...");
                 
-                // 최종 응답이 비어있는지 확인
-                if (Utils.isEmpty(answer)) {
-                    Log.error("파싱 후에도 빈 응답");
-                    msg.reply("🤔 n8n 응답을 처리했지만 내용이 없습니다");
-                    return;
-                }
-                
-                Log.info("n8n 응답 성공: " + answer.substring(0, 100) + 
-                        (answer.length > 100 ? "..." : ""));
-                
-                // 응답 전송
+                // 최종 응답 전송
                 msg.reply(answer);
-                
+
             } catch (parseError) {
                 Log.error("응답 처리 최상위 오류: " + parseError.message, parseError);
                 msg.reply("🔧 응답 처리 중 오류가 발생했습니다: " + parseError.message);
